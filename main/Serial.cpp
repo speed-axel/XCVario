@@ -116,61 +116,6 @@ void Serial::serialHandler(void *pvParameters)
         cfg->name, ticksToWait, Flarm::bincom, ebits, cfg->uart->available(), cfg->uart->getNlCounter() );
 #endif
 
-<<<<<<< Upstream, based on branch 'serial-dev' of https://github.com/iltis42/XCVario.git
-		// TX part, check if there is data for Serial Interface to send
-		if( ebits & cfg->tx_req && cfg->uart->availableForWrite() ) {
-			// ESP_LOGI(FNAME,"S%d: TX and available", cfg->uart->number() );
-			while( Router::pullMsg( *(cfg->tx_q), s ) ) {
-				// ESP_LOGD(FNAME,"S%d: TX len: %d bytes", cfg->uart->number(), tx.length() );
-				// ESP_LOG_BUFFER_HEXDUMP(FNAME,tx.c_str(),tx.length(), ESP_LOG_INFO);
-				cfg->uart->write( s.c_str(),s.length() );
-				if( !bincom_mode )
-					DM.monitorString( cfg->monitor, DIR_TX, s.c_str() );
-				// ESP_LOGD(FNAME,"S%d: TX written: %d", cfg->uart->number(), wr);
-			}
-		}
-		// RX part
-		// TBD: Unify bincom mode along with parseNMEA and binary UBX message parsing in one state machine
-		//      Current solution is resource intensive (mainly CPU), as we got 3 places where frames are
-		//      dissected analyzed.
-		if( Flarm::bincom ){
-			if( !bincom_mode ) {   // we are in bincom mode, stop this mode if Flarm has detected otherwise
-				enterBincomMode(cfg);
-			}
-			if( ebits & cfg->rx_char ) {
-				// Flarm is in binary mode and we can read bytes.
-				// AP Note: The Uart driver can read up to 112 bytes in its queue, if no pause
-			  // is in its input stream before sending an event. If a pause of 2 characters
-			  // is in the input stream we will also get an event.
-			  // Therefore the number of characters in the RX queue can be different.
-				int available = cfg->uart->available();
-				if( available ){
-					uint8_t* rxBuf = (uint8_t *) malloc( available );
-					uint16_t rxBytes = cfg->uart->readBufFromQueue( rxBuf, available );  // read out all characters from the RX queue
-					s.set( (char *)rxBuf, rxBytes );
-					routeRxData( s, cfg );
-					free( rxBuf );
-				}
-			}
-		}
-		else{ // Flarm works in text mode, check if NL is reported.
-			if( bincom_mode ){  // Flarm says we are in textmode, exit serial bincom mode if not yet done
-				exitBincomMode(cfg);
-			}
-			if( ebits & cfg->rx_nl ) { // wait for the next newline
-				uint8_t rxbuf[512];  // NMEA size is limited to 80 bytes, 128 should be enough, hence binary frames might be longer
-				size_t bytes = cfg->uart->readLineFromQueue( rxbuf, sizeof( rxbuf ) );
-				while( bytes ) {     // Reverted to bytes, NL counting doesn't work with binary frames
-					s.set( (char *) rxbuf, bytes );
-					// ESP_LOGI( FNAME, "%s RX, available: %d bytes, read: %d, postNLC: %d", cfg->name, bc, bytes, cfg->uart->getNlCounter() );
-					// ESP_LOG_BUFFER_HEXDUMP(FNAME,rxbuf,bytes, ESP_LOG_INFO);
-					routeRxData( s, cfg );
-					bytes = cfg->uart->readLineFromQueue( rxbuf, sizeof( rxbuf ) );
-				}
-			}
-		}
-	} // end while( true )
-=======
     // TX part, check if there is data for Serial Interface to send
     if( ebits & cfg->tx_req && cfg->uart->availableForWrite() ) {
       // ESP_LOGI(FNAME,"S%d: TX and available", cfg->uart->number() );
@@ -193,7 +138,10 @@ void Serial::serialHandler(void *pvParameters)
       }
       if( ebits & cfg->rx_char ) {
         // Flarm is in binary mode and we can read bytes.
-        // Due to delays we can have more than one character in the RX queue.
+        // AP Note: The Uart driver can read up to 112 bytes in its queue, if no pause
+        // is in its input stream before sending an event. If a pause of 2 characters
+        // is in the input stream we will also get an event.
+        // Therefore the number of characters in the RX queue can be different.
         int available = cfg->uart->available();
         if( available ){
           uint8_t* rxBuf = (uint8_t *) malloc( available );
@@ -209,55 +157,18 @@ void Serial::serialHandler(void *pvParameters)
         exitBincomMode(cfg);
       }
       if( ebits & cfg->rx_nl ) { // wait for the next newline
-        uint8_t rxbuf[512]; // NMEA size is limited to 80 bytes, hence frames might overrun...
-        // ESP_LOGI( FNAME, "%s RX, entry: %d bytes, postNLC: %d", cfg->name, cfg->uart->available(), cfg->uart->getNlCounter() );
-        /**
-         * AP: Hier wird eine Zeile gelesen, die auch im Event signalisiert wurde.
-         */
+        uint8_t rxbuf[512];  // NMEA size is limited to 80 bytes, 128 should be enough, hence binary frames might be longer
         size_t bytes = cfg->uart->readLineFromQueue( rxbuf, sizeof( rxbuf ) );
         while( bytes ) {     // Reverted to bytes, NL counting doesn't work with binary frames
           s.set( (char *) rxbuf, bytes );
-          // ESP_LOGI( FNAME, "%s RX, available: %d bytes, postNLC: %d", cfg->name, bytes, cfg->uart->getNlCounter() );
+          // ESP_LOGI( FNAME, "%s RX, available: %d bytes, read: %d, postNLC: %d", cfg->name, bc, bytes, cfg->uart->getNlCounter() );
           // ESP_LOG_BUFFER_HEXDUMP(FNAME,rxbuf,bytes, ESP_LOG_INFO);
-          /**
-           * AP: Wenn hier die Flarm OK Antwort auf die Binärumschaltung $PFLAX kommt
-           * und sie wird gleich weiter geroutet, dann ist nicht sicher gestellt,
-           * dass nicht doch noch was anderes danach in die BT TX Queue geschrieben wird.
-           * Z.B. von routeXCV()
-           * Man sollte hier die Binärumschaltung einleiten und erst danach, wenn
-           * der 2. Kanal still gelegt wurde und die TX Queues leer sind, die
-           * $PFLAX Antwort senden. Mit dieser Lösung hatte ich keine Hänger mehr.
-           */
-          //--->
-          Flarm::parsePFLAX( s.c_str() );
-          if( Flarm::bincom ){
-            if( !bincom_mode ) {   // we are in bincom mode, stop this mode if Flarm has detected otherwise
-              enterBincomMode(cfg);
-            }
-          }
-          // <---
           routeRxData( s, cfg );
-          /**
-           * AP: Hier wird wieder eine Zeile gelesen, ohne zu prüfen,
-           * ob noch eine da ist. Das Event was zum Lesen führt sagt nicht aus,
-           * wie viele Zeilen im Buffer gelesen werden können.
-           * Das readLine liest Bytes, solange bis der Buffer voll
-           * ist, ein NL gelesen wurde oder nichts mehr kommt.
-           * Buffer voll oder keine Daten mehr zu lesen führen zu einer
-           * Segmentierung des NMEA Satzes. Hier sollte
-           * man hier nochmals auf vorhandene NLs prüfen und wenn keine mehr
-           * da sind, die Schleife verlassen, um Segmentierungen zu vermeiden.
-           */
-          //-->
-          if( ! cfg->uart->getNlCounter() )
-             break;
-          // <--
           bytes = cfg->uart->readLineFromQueue( rxbuf, sizeof( rxbuf ) );
         }
       }
     }
   } // end while( true )
->>>>>>> a8f98d5 Update Serial.cpp
 }
 
 void Serial::enterBincomMode( xcv_serial_t *cfg ){
