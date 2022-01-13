@@ -112,7 +112,7 @@ void Protocols::sendItem( const char *key, char type, void *value, int len, bool
 		sprintf( &str[i], "*%02X\r\n", cs );
 		// ESP_LOGI(FNAME,"sendNMEAString: %s", str );
 		SString nmea( str );
-		if( !Router::forwardMsg( nmea, client_tx_q ) ){
+		if( !Router::forwardMsg( nmea, can_tx_q ) ){
 			ESP_LOGW(FNAME,"Warning: Overrun in send to Client XCV %d bytes", nmea.length() );
 		}
 	}
@@ -264,46 +264,49 @@ void Protocols::sendNMEA( proto_t proto, char* str, float baro, float dp, float 
 
 // The XCVario Protocol or Cambridge CAI302 protocol to adjust MC,Ballast,Bugs.
 
+void Protocols::parseXS( const char *str ){
+	// ESP_LOGI(FNAME,"parseXS %s", str );
+	char key[20];
+	char type;
+	char role; // M | C
+	int cs;
+	float val;
+	sscanf(str, "!xs%c,%[^,],%c,%f*%02x", &role, key, &type, &val, &cs );  // !xsM,FLPS,F,1.5000*27
+	int calc_cs=calcNMEACheckSum( str );
+	if( cs == calc_cs ){
+		// ESP_LOGI(FNAME,"parsed NMEA: role=%c type=%c key=%s val=%f vali=%d", role, type , key, val, (int)val );
+		if( type == 'F' ){
+			SetupNG<float> *item = (SetupNG<float> *)SetupCommon::getMember( key );
+			if( item != 0 ){
+				if( role == 'A' )
+					item->ack( val );
+				else
+					item->set( val, false );
+			}else
+				ESP_LOGW(FNAME,"Setup item with key %s not found", key );
+		}
+		else if( type == 'I' ){
+			SetupNG<int> *item = (SetupNG<int> *)SetupCommon::getMember( key );
+			if( item != 0 ){
+				if( role == 'A' && val == item->get() )
+					item->ack( val );
+				else
+					item->set( (int)val, false );
+			}else
+				ESP_LOGW(FNAME,"Setup item with key %s not found", key );
+		}
+
+	}else{
+		ESP_LOGW(FNAME,"!xs messgae CS error got:%X != calculated:%X", cs, calc_cs );
+		ESP_LOG_BUFFER_HEXDUMP(FNAME,str,32, ESP_LOG_WARN);
+	}
+}
+
+
 void Protocols::parseNMEA( const char *str ){
 	// ESP_LOGI(FNAME,"parseNMEA: %s, len: %d", astr,  strlen(astr) );
-	if ( strncmp( str, "!xs", 3 ) == 0 ) {
-		// ESP_LOGI(FNAME,"parseNMEA %s", str );
-		char key[20];
-		char type;
-		char role; // M | C
-		int cs;
-		float val;
-		sscanf(str, "!xs%c,%[^,],%c,%f*%02x", &role, key, &type, &val, &cs );  // !xsM,FLPS,F,1.5000*27
-		int calc_cs=calcNMEACheckSum( str );
-		if( cs == calc_cs ){
-			// ESP_LOGI(FNAME,"parsed NMEA: role=%c type=%c key=%s val=%f vali=%d", role, type , key, val, (int)val );
-			if( type == 'F' ){
-				SetupNG<float> *item = (SetupNG<float> *)SetupCommon::getMember( key );
-				if( item != 0 ){
-					if( role == 'A' )
-						item->ack( val );
-					else
-						item->set( val, false );
-				}else
-					ESP_LOGW(FNAME,"Setup item with key %s not found", key );
-			}
-			else if( type == 'I' ){
-				SetupNG<int> *item = (SetupNG<int> *)SetupCommon::getMember( key );
-				if( item != 0 ){
-					if( role == 'A' && val == item->get() )
-						item->ack( val );
-					else
-						item->set( (int)val, false );
-				}else
-					ESP_LOGW(FNAME,"Setup item with key %s not found", key );
-			}
 
-		}else{
-			ESP_LOGW(FNAME,"!xs messgae CS error got:%X != calculated:%X", cs, calc_cs );
-			ESP_LOG_BUFFER_HEXDUMP(FNAME,str,32, ESP_LOG_WARN);
-		}
-	}
-	else if ( strncmp( str, "!xc,", 4 ) == 0 ) { // need this to support Wind Simulator with Compass simulation
+	if ( strncmp( str, "!xc,", 4 ) == 0 ) { // need this to support Wind Simulator with Compass simulation
 		float h;
 		sscanf( str,"!xc,%f", &h );
 		ESP_LOGI(FNAME,"Compass heading detected=%3.1f", h );
@@ -382,40 +385,32 @@ void Protocols::parseNMEA( const char *str ){
 			}
 		}
 	}
-	else if( !strncmp( str+1, "PFLAE,", 5 )) {  // Flarm restart only
+	else if( !strncmp( str+1, "PFLAE,", 5 )) {  // On Task declaration or re-connect
 		Flarm::parsePFLAE( str );
-		if( Flarm::bincom  ) {
-			Flarm::bincom--;
-			ESP_LOGI(FNAME,"Flarm::bincom %d", Flarm::bincom  );
-		}
+		ageBincom();
 	}
 	else if( !strncmp( str+1, "PFLAU,", 5 )) {
 		Flarm::parsePFLAU( str );
-		if( Flarm::bincom  ) {
-			Flarm::bincom--;
-			ESP_LOGI(FNAME,"Flarm::bincom %d", Flarm::bincom  );
-		}
+		ageBincom();
 	}
 	else if( !strncmp( str+3, "RMC,", 3 ) ) {
 		Flarm::parseGPRMC( str );
-		if( Flarm::bincom  ) {
-			Flarm::bincom--;
-			ESP_LOGI(FNAME,"Flarm::bincom %d", Flarm::bincom  );
-		}
+		ageBincom();
 	}
 	else if( !strncmp( str+3, "GGA,", 3 )) {
 		Flarm::parseGPGGA( str );
-		if( Flarm::bincom  ) {
-			Flarm::bincom--;
-			ESP_LOGI(FNAME,"Flarm::bincom %d", Flarm::bincom  );
-		}
+		ageBincom();
 	}
 	else if( !strncmp( str+3, "RMZ,", 3 )) {
 		Flarm::parsePGRMZ( str );
-		if( Flarm::bincom  ) {
-			Flarm::bincom--;
-			ESP_LOGI(FNAME,"Flarm::bincom %d", Flarm::bincom  );
-		}
+		ageBincom();
+	}
+}
+
+void Protocols::ageBincom(){
+	if( Flarm::bincom  ) {
+		Flarm::bincom--;
+		ESP_LOGI(FNAME,"Flarm::bincom %d", Flarm::bincom  );
 	}
 }
 
