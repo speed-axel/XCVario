@@ -9,6 +9,7 @@
 #include "Serial.h"
 #include "Flarm.h"
 #include "DataMonitor.h"
+#include "Protocols.h"
 
 // UBX SYNC
 const uint8_t UBX_SYNC1 = 0xb5;
@@ -53,7 +54,8 @@ void DataLink::process( const char *packet, int len, int port ) {
 	// ESP_LOG_BUFFER_HEXDUMP(FNAME,packet, len, ESP_LOG_INFO);
 	ubxFound = false;
 	nmeaFound = false;
-	if( Flarm::bincom ){  // neither UBX nor NMEA, for Flarm bincom protocol transparent forward
+	if( Flarm::bincom || Protocols::krt2 ){
+	        // neither UBX nor NMEA, for Flarm bincom or krt2 protocol transparent forward
 		// ESP_LOGI(FNAME, "Port S%1d: Flarm::bincom = true", port);
 		routeSerialData(packet, len, port, false );
 	}else{

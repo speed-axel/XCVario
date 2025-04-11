@@ -166,6 +166,15 @@ void WifiApp::socket_server(void *setup) {
 				// ESP_LOGI(FNAME, "read from wifi client %d", client_rec.client );
 				ssize_t sizeRead = recv(client_rec.client, r, SSTRLEN-1, MSG_DONTWAIT);
 				if (sizeRead > 0) {
+				        if( config->port == 8882 && Protocols::krt2 == false ) {
+				            const char* krt2 = "!krt2";
+				            if( sizeRead >= sizeof(krt2) && strncmp( "!krt2", r, sizeof(krt2)) == 0 )
+				              {
+				                Protocols::krt2 = true;
+				                ESP_LOGI(FNAME, "<--!krt2 received");
+				                continue;
+				              }
+				          }
 					config->dlw->process( r, sizeRead, config->port );
 					DM.monitorString( MON_WIFI_8880+config->port-8880, DIR_RX, r, sizeRead );
 					// ESP_LOGI(FNAME, "RX wifi client port %d size: %d bincom:%d", config->port, sizeRead, Flarm::bincom );

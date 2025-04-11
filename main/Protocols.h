@@ -33,6 +33,7 @@ public:
 	static int calcNMEACheckSum(const char *nmea);
 	static int getNMEACheckSum(const char *nmea);
 	static int getXcvProtocolVersion() { return _protocol_version; };
+	static bool krt2;
 
 private:
 	static void ageBincom();

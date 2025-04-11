@@ -32,6 +32,8 @@
 S2F *   Protocols::_s2f = 0;
 uint8_t Protocols::_protocol_version = 1;
 bool    Protocols::_can_send_error = false;
+bool    Protocols::krt2 = false;
+
 Protocols::Protocols(S2F * s2f) {
 	_s2f = s2f;
 }

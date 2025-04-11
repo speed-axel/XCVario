@@ -114,7 +114,7 @@ void Serial::serialHandler(void *pvParameters)
 			int len = Router::pullBlock( *(cfg->tx_q), buf, 512 );
 			if( len ){
 				// ESP_LOGI(FNAME,"S%d: TX len: %d bytes", cfg->uart->number(), len );
-				// ESP_LOG_BUFFER_HEXDUMP(FNAME,buf,len, ESP_LOG_INFO);
+				ESP_LOG_BUFFER_HEXDUMP(FNAME,buf,len, ESP_LOG_INFO);
 				cfg->uart->write( buf, len );
 				if( !bincom_mode )
 					DM.monitorString( cfg->monitor, DIR_TX, buf, len );
@@ -129,7 +129,18 @@ void Serial::serialHandler(void *pvParameters)
 				// ESP_LOGI(FNAME,"S%d: RX: %d bytes, avail: %d", cfg->uart->number(), rxBytes, available );
 				// ESP_LOG_BUFFER_HEXDUMP(FNAME,buf, rxBytes, ESP_LOG_INFO);
 				buf[rxBytes] = 0;
-				cfg->dl->process( buf, rxBytes, cfg->port );
+
+				if( cfg->uart->number() == 2 && Protocols::krt2 == true &&
+				    rxBytes == 1 && buf[0] == 'S' )
+				  {
+				    // Got a ping from the KRT2 device, answer immediately due to latency time of 60ms.
+				    cfg->uart->write( 0x01 );
+				    // ESP_LOGI(FNAME,"S2 got 'S' ping, answering it with 0x1 it.");
+				  }
+				else {
+				  cfg->dl->process( buf, rxBytes, cfg->port );
+				}
+
 				DM.monitorString( cfg->monitor, DIR_RX, buf, rxBytes );
 			}
 		}
